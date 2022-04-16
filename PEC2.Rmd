@@ -1,0 +1,129 @@
+---
+title: "Visualización de datos PEC 2"
+output:
+  html_document:
+    df_print: paged
+---
+
+    Autor: Alejandro Prieto Velasco
+
+# Introducción
+
+El objetivo de este notebook, el cual sera usado para responder a la PEC 2 de la asignatura de visualización de datos de la UOC, es buscar un set de datos que se adecue a 3 visualizaciones que nos han sido asignadas. En mi caso tengo que hacer un gráfico de área, un gráfico Nightingale y otro del tipo Beeswarm.
+
+El set de datos elegido proviene del INE (Instituto Nacional de Estadística) y contiene la información del número total de viajeros que han sido transportados por medios terrestres, aéreo y marítimo. Los datos están agregado a nivel mes y en mi caso solo voy a elegir el nivel de agregación más alto en cuanto a tipo de transporte: urbano, interurbano y transporte especial y discrecional. El perido elegido es desde 2017 a 2021.
+
+[link a los datos](https://www.ine.es/jaxiT3/Tabla.htm?t=20239)
+
+# Carga de datos y limpieza
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(stringr)
+
+# Disabling scientific notation
+options(scipen = 100)
+
+
+# Loading csv
+df_transp <-
+  read.csv2("./viajeros_transportados.csv" , encoding = "UTF-8")
+
+# Selecting columns
+df_transp <- df_transp[, c(2, 7, 8)]
+
+# Renaming
+colnames(df_transp) <-
+  c("Tipo_de_transporte", "Periodo", "Num_viajeros")
+
+
+# Fixing numeric column
+df_transp$Num_viajeros <-
+  gsub(".", "", df_transp$Num_viajeros, fixed = TRUE)
+df_transp$Num_viajeros <- as.numeric(df_transp$Num_viajeros)
+
+# Extracting year and month
+df_transp["Año"] <- str_sub(df_transp$Periodo, 0, 4)
+df_transp["Mes"] <- str_sub(df_transp$Periodo, 6)
+
+df_transp$Año <- as.integer(df_transp$Año)
+df_transp$Mes <- as.integer(df_transp$Mes)
+
+# Converting period to date format
+df_transp$Periodo <- gsub("M","-", df_transp$Periodo, fixed = TRUE)
+df_transp$Periodo <- paste(df_transp$Periodo,"-01",sep="")
+df_transp$Periodo <- as.Date(df_transp$Periodo)
+
+# Converting to factor categorical variable
+df_transp$Tipo_de_transporte <-
+  as.factor(df_transp$Tipo_de_transporte)
+
+head(df_transp)
+
+
+```
+
+# Visualización 1: Area Chart
+
+El primer gráfico es un área chart, en este caso concreto he elegido un stacked area chart.
+
+Este tipo de gráfico es parecido a un line chart con la diferencia de que se pinta el are que hay debajo de la línea. Suelen ser indicados para representar series temporales (aunque también otro tipo de series), en los que se quiere representar no solo la evolución que ha habido de una variable (en nuestro caso numero de pasajeros) a través del eje X (en este caso meses), si no que además se quiere mostrar como evolucionan los subgrupos dentro de esa variable (en este caso el tipo de medio de transporte).
+
+Es importante tener en cuenta que la suma de los distintos grupos debería ser igual a total de la variable que se quiera medir y que este gráfico está orientado a descubrir cambios a lo largo del eje X en la composición de los grupos, pero no es indicado si se quiere saber el valor exacto de cada uno de los grupos.
+
+La limitación principal, sería si una de las medidas tomase un valor negativo y las otras no.
+
+```{r}
+ggplot(df_transp,aes(x = Periodo, y = Num_viajeros, fill = Tipo_de_transporte)) + 
+  geom_area() + 
+  theme(legend.position="bottom",legend.title = element_blank()) +
+   ggtitle("Area Chart: Número de viajeros por tipo de transporte")
+
+```
+
+# Visualización 2: Nightingale Chart
+
+Este tipo de gráfico también conocido como Polar Area, Wind Rose, Rose Chart o Coxcomb, fue usado por la famosa matemática Florence Nightingale, para comunicar las muertes evitables de los soldados durante la guerra de Crimea ([datavizcatalogue](https://datavizcatalogue.com/methods/nightingale_rose_chart.html)).
+
+En resumen es una especie de mezcla entre bar chart y pie chart, con la diferencia a este ultimo en que los ángulos de este son todos iguales y para representar el tamaño de cada grupo de la variable categórica, se usa la distancia del centro al borde del círculo. En esencia, es lo mismo que un barchart solo que se representa de forma circular, de hecho, se puede observar en el código que primero se declara geom_bar el cual es un diagrama de barras y después se le añade coord_polar para hacerlo circular.
+
+Es apropiado cuando se tienen una métrica que se quiere medir viendo las diferencias entre un grupo y un subgrupo. En nuestro caso el grupo son los años y el subgrupo dentro de cada año son los tipos de trasnporte. La métrica es número de pasajeros.
+
+Hay que evitar tratar de usar este gráfico cuando o bien los grupos o bien los subgrupos son muy numerosos o si una de las medidas tomase un valor negativo y las otras no.
+
+```{r}
+# Grouping data
+df_transp_año <- df_transp %>%
+  group_by(Año, Tipo_de_transporte) %>%
+  summarise(Num_viajeros = sum(Num_viajeros))
+
+
+
+ggplot(df_transp_año,
+       aes(x = factor(Año), y = Num_viajeros, fill = Tipo_de_transporte)) + 
+  geom_bar(stat = "identity") +
+  coord_polar() +
+  ggtitle("Nightingale: Número de viajeros por tipo de transporte") +
+  xlab("Año") + theme(legend.title = element_blank())
+
+
+
+```
+
+# Visualización 3: Beeswarm plot
+
+Por último, el gráfico de enjambre o bee swarm plot, es una forma de representar la distribución de una variable de manera similar a como se representa con un boxplot o un violin plot, solo que en este tipo de gráfico la densidad se representa mediante puntos, mientras mas puntos haya en una de las ramas, mayor densidad tendrá la métrica en ese tramo.
+
+En este caso se puede separar por una variable categórica (tipo de transporte), incluso se podría a llegar a separar por otra subcategoría que no tuviese muchos valores (por ejemplo sexo) coloreando los puntos dentro de cada uno de los enjambres de manera distinta.
+
+```{r}
+library(ggbeeswarm)
+
+ggplot(df_transp,
+       aes(x = Tipo_de_transporte, y = Num_viajeros, color = Tipo_de_transporte)) +
+  geom_beeswarm(cex = 2) +
+  ggtitle("Beeswarm: Número de viajeros por tipo de transporte") +
+  theme(legend.position="none")
+ 
+```
